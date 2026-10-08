@@ -1,0 +1,95 @@
+import cv2
+import pytesseract
+import pyttsx3
+import speech_recognition as sr
+import time
+from openai import OpenAI
+
+# 🔑 API
+client = OpenAI(api_key="SUA_API_KEY")
+
+# 🔊 Voz
+engine = pyttsx3.init()
+engine.setProperty('rate', 170)
+
+def falar(texto):
+    print("Falando:", texto)
+    engine.say(texto)
+    engine.runAndWait()
+
+# 🎤 Ouvir comando (leve)
+def ouvir():
+    r = sr.Recognizer()
+    with sr.Microphone() as source:
+        r.adjust_for_ambient_noise(source, duration=0.5)
+        audio = r.listen(source, phrase_time_limit=3)
+
+    try:
+        comando = r.recognize_google(audio, language='pt-BR')
+        return comando.lower()
+    except:
+        return ""
+
+# 🧠 IA (só quando necessário)
+def explicar(texto):
+    try:
+        resposta = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Explique de forma curta e simples para uma pessoa cega."},
+                {"role": "user", "content": texto}
+            ]
+        )
+        return resposta.choices[0].message.content
+    except:
+        return "Erro ao interpretar o texto."
+
+# 📄 OCR
+def ler_texto(frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    texto = pytesseract.image_to_string(gray)
+
+    if texto.strip() == "":
+        falar("Não consegui ler o texto.")
+        return
+
+    falar("Processando texto")
+
+    # 🔥 IA só aqui
+    resposta = explicar(texto[:500])  # limita tamanho
+    falar(resposta)
+
+# 📷 Câmera (resolução baixa = mais rápido)
+camera = cv2.VideoCapture(0)
+camera.set(3, 320)
+camera.set(4, 240)
+
+falar("Sensorial Vision iniciado")
+
+ultimo_comando = 0
+
+while True:
+    ret, frame = camera.read()
+    if not ret:
+        break
+
+    cv2.imshow("Sensorial Vision", frame)
+
+    # ⏱️ escuta a cada 4 segundos (evita travar)
+    if time.time() - ultimo_comando > 4:
+        comando = ouvir()
+        ultimo_comando = time.time()
+
+        if "ler texto" in comando:
+            falar("Lendo texto")
+            ler_texto(frame)
+
+        elif "desligar" in comando:
+            falar("Encerrando sistema")
+            break
+
+    if cv2.waitKey(1) == 27:
+        break
+
+camera.release()
+cv2.destroyAllWindows()
